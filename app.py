@@ -722,4 +722,74 @@ elif app_mode == "💬 Ask Questions":
         send_btn = st.button("Send! 📨", use_container_width=True)
     
     if send_btn and user_input:
-        st.session
+        st.session_state.chat_history.append({
+            'role': 'user',
+            'content': user_input
+        })
+        
+        with st.spinner("🤔 Thinking..."):
+            response = chat_with_gemini(user_input, st.session_state.animal_context)
+        
+        st.session_state.chat_history.append({
+            'role': 'assistant',
+            'content': response
+        })
+        
+        st.rerun()
+    
+    # Quick Questions
+    if len(st.session_state.chat_history) == 0:
+        st.markdown("### 💡 Fun Questions to Ask!")
+        quick_questions = [
+            "What's the biggest animal on Earth?",
+            "How do dolphins talk to each other?",
+            "What do pandas eat?",
+            "How fast can a cheetah run?",
+            "Why do elephants have trunks?",
+            "Can penguins fly?"
+        ]
+        
+        cols = st.columns(2)
+        for i, question in enumerate(quick_questions):
+            with cols[i % 2]:
+                if st.button(question, key=f"quick_{i}"):
+                    st.session_state.chat_history.append({
+                        'role': 'user',
+                        'content': question
+                    })
+                    response = chat_with_gemini(question, st.session_state.animal_context)
+                    st.session_state.chat_history.append({
+                        'role': 'assistant',
+                        'content': response
+                    })
+                    st.rerun()
+    
+    # Clear Chat
+    if len(st.session_state.chat_history) > 0:
+        if st.button("🗑️ Clear Chat History"):
+            st.session_state.chat_history = []
+            st.rerun()
+
+# ----------------------------------
+# My Animals Page
+# ----------------------------------
+elif app_mode == "📚 My Animals":
+    st.markdown("<h1>📚 My Animal Collection</h1>", unsafe_allow_html=True)
+    
+    if not st.session_state.detection_history:
+        st.info("🐾 You haven't identified any animals yet. Go to Find Animals to get started!")
+    else:
+        st.markdown(f"### Total Animals Found: {len(st.session_state.detection_history)}")
+        
+        for i, record in enumerate(reversed(st.session_state.detection_history)):
+            with st.expander(f"🐾 {record['animal_name']} - {record['timestamp']}"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Animal:** {record['animal_name']}")
+                    st.write(f"**Type:** {record['animal_type']}")
+                with col2:
+                    st.write(f"**Date:** {record['timestamp']}")
+        
+        if st.button("🗑️ Clear History"):
+            st.session_state.detection_history = []
+            st.rerun()
