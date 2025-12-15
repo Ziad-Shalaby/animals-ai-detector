@@ -505,8 +505,9 @@ if app_mode == "🏠 Home":
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
+        # FIXED: Replaced use_column_width with use_container_width
         st.image("https://images.unsplash.com/photo-1497752531616-c3afd9760a11?w=800", 
-                 use_column_width=True, caption="Red Pandas are super cute and love to climb trees!")
+                 use_container_width=True, caption="Red Pandas are super cute and love to climb trees!")
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -655,11 +656,18 @@ elif app_mode == "🔍 Find Animals":
         st.markdown("### 📸 Upload Your Animal Picture!")
         st.info("Take a clear photo of any animal - dogs, cats, birds, bugs, anything! 🦁🐶🦅🐛")
         
-        uploaded_file = st.file_uploader("", type=["jpg", "jpeg", "png"], key="animal_upload")
+        # FIXED: Added label="Choose an image" and label_visibility="collapsed"
+        uploaded_file = st.file_uploader(
+            "Choose an animal image", 
+            type=["jpg", "jpeg", "png"], 
+            key="animal_upload", 
+            label_visibility="collapsed"
+        )
         
         if uploaded_file:
             image = Image.open(uploaded_file)
-            st.image(image, caption="Your Awesome Photo! 📸", use_column_width=True)
+            # FIXED: Replaced use_column_width with use_container_width
+            st.image(image, caption="Your Awesome Photo! 📸", use_container_width=True)
             
             if st.button("🔍 Find Out What Animal This Is!", use_container_width=True):
                 with st.spinner("🤖 AI is looking at your picture... This is so cool! ✨"):
