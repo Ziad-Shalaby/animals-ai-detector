@@ -250,8 +250,19 @@ if 'detection_history' not in st.session_state:
 # API Configuration
 # ----------------------------------
 HF_API_KEY = st.secrets.get("HF_API_KEY", "")
-HF_API_URL_VISION = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large"
-HF_API_URL_CHAT = "https://api-inference.huggingface.co/models/microsoft/Phi-3-mini-4k-instruct"
+
+# Multiple model options for reliability
+VISION_MODELS = [
+    "Salesforce/blip-image-captioning-base",
+    "nlpconnect/vit-gpt2-image-captioning",
+    "Salesforce/blip-image-captioning-large"
+]
+
+CHAT_MODELS = [
+    "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "meta-llama/Meta-Llama-3-8B-Instruct",
+    "HuggingFaceH4/zephyr-7b-beta"
+]
 
 # ----------------------------------
 # Hugging Face Vision API for Animal Detection
@@ -274,63 +285,106 @@ def identify_animal_with_hf(image_data):
         
         headers = {"Authorization": f"Bearer {HF_API_KEY}"}
         
-        # First, get image caption
-        response = requests.post(HF_API_URL_VISION, headers=headers, data=img_byte_arr)
+        caption = None
+        model_used = None
         
-        if response.status_code != 200:
+        # Try multiple vision models
+        for model in VISION_MODELS:
+            try:
+                api_url = f"https://api-inference.huggingface.co/models/{model}"
+                response = requests.post(api_url, headers=headers, data=img_byte_arr, timeout=30)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    if isinstance(result, list) and len(result) > 0:
+                        caption = result[0].get('generated_text', '')
+                    else:
+                        caption = result.get('generated_text', '')
+                    
+                    if caption:
+                        model_used = model
+                        break
+                        
+            except Exception as e:
+                continue
+        
+        if not caption:
             return {
                 "error": True,
-                "message": f"Hmm, the AI couldn't process this image. Try another picture! (Error: {response.status_code})"
+                "message": "Hmm, the AI is taking a nap right now. Please wait a moment and try again! 😴"
             }
         
-        result = response.json()
+        # Create kid-friendly response based on caption
+        animal_name = caption.strip()
         
-        if isinstance(result, list) and len(result) > 0:
-            caption = result[0].get('generated_text', '')
+        # Try to enhance with chat model
+        enhanced_text = None
+        for chat_model in CHAT_MODELS:
+            try:
+                prompt = f"""Based on this image description: "{caption}"
+
+Provide animal information in a fun, kid-friendly way for children ages 6-12:
+
+Animal Name: [Common name]
+Scientific Name: [Scientific name]
+Animal Type: [Mammal/Bird/Reptile/Fish/Insect]
+Where They Live: [Habitat]
+What They Eat: [Diet]
+Are They Safe?: [Conservation status]
+Cool Facts:
+- [Fact 1]
+- [Fact 2]
+- [Fact 3]
+What They Look Like: [Description]
+
+Keep it fun and simple!"""
+
+                chat_url = f"https://api-inference.huggingface.co/models/{chat_model}"
+                chat_response = requests.post(
+                    chat_url,
+                    headers=headers,
+                    json={"inputs": prompt, "parameters": {"max_new_tokens": 400, "temperature": 0.7}},
+                    timeout=30
+                )
+                
+                if chat_response.status_code == 200:
+                    chat_result = chat_response.json()
+                    if isinstance(chat_result, list) and len(chat_result) > 0:
+                        enhanced_text = chat_result[0].get('generated_text', '')
+                    else:
+                        enhanced_text = chat_result.get('generated_text', '')
+                    
+                    if enhanced_text:
+                        # Clean up the response
+                        if prompt in enhanced_text:
+                            enhanced_text = enhanced_text.replace(prompt, '').strip()
+                        break
+                        
+            except Exception as e:
+                continue
+        
+        # Use enhanced text if available, otherwise create simple response
+        if enhanced_text and len(enhanced_text) > 50:
+            response_text = enhanced_text
         else:
-            caption = result.get('generated_text', '')
+            response_text = f"""Animal Name: {animal_name}
+Scientific Name: Scientific classification varies
+Animal Type: Based on the image
+Where They Live: Various habitats
+What They Eat: Depends on the species
+Are They Safe?: Status varies by species
+Cool Facts:
+- This animal was identified from your photo!
+- Every animal is unique and special!
+- Animals help keep nature balanced!
+What They Look Like: {caption}"""
         
-        # Now use the chat model to create kid-friendly response
-        prompt = f"""Based on this image description: "{caption}"
-
-Provide animal information in a fun, kid-friendly way suitable for children in grades 1-6:
-
-Animal Name: [Common name that kids would know]
-Scientific Name: [Scientific name or "Let's call it the science name!"]
-Animal Type: [Mammal/Bird/Reptile/Fish/Amphibian/Insect]
-Where They Live: [Their home/habitat in simple terms]
-What They Eat: [Diet in simple, fun terms]
-Are They Safe?: [Conservation status in kid terms]
-Cool Facts: [3-5 super fun facts that kids will find amazing!]
-What They Look Like: [Fun description]
-
-Make it fun and exciting for kids ages 6-12! Use emojis when helpful! 🐾"""
-
-        chat_response = requests.post(
-            HF_API_URL_CHAT,
-            headers=headers,
-            json={"inputs": prompt, "parameters": {"max_new_tokens": 500, "temperature": 0.7}}
-        )
-        
-        if chat_response.status_code == 200:
-            chat_result = chat_response.json()
-            if isinstance(chat_result, list) and len(chat_result) > 0:
-                text = chat_result[0].get('generated_text', caption)
-            else:
-                text = chat_result.get('generated_text', caption)
-            
-            return {
-                "error": False,
-                "text": text,
-                "model_used": "Hugging Face (BLIP + Phi-3)"
-            }
-        else:
-            # Fallback to simple caption
-            return {
-                "error": False,
-                "text": f"Animal Name: {caption}\n\nCool Facts:\n- This is what I see in the picture!\n- Upload another image to learn more!\n- I'm still learning to identify animals better!",
-                "model_used": "Hugging Face (BLIP)"
-            }
+        return {
+            "error": False,
+            "text": response_text,
+            "model_used": f"Hugging Face ({model_used})"
+        }
         
     except Exception as e:
         return {
@@ -366,36 +420,46 @@ Keep your answer short (2-3 sentences), fun, and easy to understand for kids!"""
 
 Keep your answer short (2-3 sentences), fun, and easy to understand for kids! Use emojis if it helps! 🐾"""
         
-        response = requests.post(
-            HF_API_URL_CHAT,
-            headers=headers,
-            json={
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": 250,
-                    "temperature": 0.7,
-                    "top_p": 0.9
-                }
-            }
-        )
+        # Try multiple chat models
+        for chat_model in CHAT_MODELS:
+            try:
+                chat_url = f"https://api-inference.huggingface.co/models/{chat_model}"
+                response = requests.post(
+                    chat_url,
+                    headers=headers,
+                    json={
+                        "inputs": prompt,
+                        "parameters": {
+                            "max_new_tokens": 250,
+                            "temperature": 0.7,
+                            "top_p": 0.9
+                        }
+                    },
+                    timeout=30
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    if isinstance(result, list) and len(result) > 0:
+                        text = result[0].get('generated_text', '')
+                    else:
+                        text = result.get('generated_text', '')
+                    
+                    # Extract only the response part (remove the prompt)
+                    if prompt in text:
+                        text = text.replace(prompt, '').strip()
+                    
+                    if text and len(text) > 10:
+                        return text
+                        
+            except Exception as e:
+                continue
         
-        if response.status_code == 200:
-            result = response.json()
-            if isinstance(result, list) and len(result) > 0:
-                text = result[0].get('generated_text', '')
-            else:
-                text = result.get('generated_text', '')
-            
-            # Extract only the response part (remove the prompt)
-            if prompt in text:
-                text = text.replace(prompt, '').strip()
-            
-            return text if text else "That's a great question! Let me think about that... 🤔"
-        else:
-            return f"⚠️ Oh no! The AI is taking a break. Please try again in a moment!"
+        # Fallback response
+        return "That's a great question! Animals are amazing creatures. Try asking again in a moment! 🐾"
         
     except Exception as e:
-        return f"Oops! Something went wrong: {str(e)}"
+        return f"Oops! The AI is resting right now. Please try again! 😊"
 
 # ----------------------------------
 # Sidebar
