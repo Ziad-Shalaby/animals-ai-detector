@@ -505,9 +505,9 @@ if app_mode == "🏠 Home":
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # FIXED: Replaced use_column_width with use_container_width
+        # FIXED: Replaced use_container_width=True with width="stretch" per logs
         st.image("https://images.unsplash.com/photo-1497752531616-c3afd9760a11?w=800", 
-                 use_container_width=True, caption="Red Pandas are super cute and love to climb trees!")
+                 width="stretch", caption="Red Pandas are super cute and love to climb trees!")
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -656,7 +656,6 @@ elif app_mode == "🔍 Find Animals":
         st.markdown("### 📸 Upload Your Animal Picture!")
         st.info("Take a clear photo of any animal - dogs, cats, birds, bugs, anything! 🦁🐶🦅🐛")
         
-        # FIXED: Added label="Choose an image" and label_visibility="collapsed"
         uploaded_file = st.file_uploader(
             "Choose an animal image", 
             type=["jpg", "jpeg", "png"], 
@@ -666,10 +665,11 @@ elif app_mode == "🔍 Find Animals":
         
         if uploaded_file:
             image = Image.open(uploaded_file)
-            # FIXED: Replaced use_column_width with use_container_width
-            st.image(image, caption="Your Awesome Photo! 📸", use_container_width=True)
+            # FIXED: Replaced use_container_width=True with width="stretch" per logs
+            st.image(image, caption="Your Awesome Photo! 📸", width="stretch")
             
-            if st.button("🔍 Find Out What Animal This Is!", use_container_width=True):
+            # FIXED: Applied width="stretch" to button as well since it was using use_container_width
+            if st.button("🔍 Find Out What Animal This Is!", width="stretch"):
                 with st.spinner("🤖 AI is looking at your picture... This is so cool! ✨"):
                     result = identify_animal_with_hf(image)
                     
@@ -833,7 +833,8 @@ elif app_mode == "💬 Ask Questions":
                                    placeholder="Example: Why do giraffes have long necks?")
     
     with col2:
-        send_btn = st.button("Send! 📨", use_container_width=True)
+        # FIXED: width="stretch" for button
+        send_btn = st.button("Send! 📨", width="stretch")
     
     if send_btn and user_input:
         st.session_state.chat_history.append({
@@ -882,28 +883,4 @@ elif app_mode == "💬 Ask Questions":
     if len(st.session_state.chat_history) > 0:
         if st.button("🗑️ Clear Chat History"):
             st.session_state.chat_history = []
-            st.rerun()
-
-# ----------------------------------
-# My Animals Page
-# ----------------------------------
-elif app_mode == "📚 My Animals":
-    st.markdown("<h1>📚 My Animal Collection</h1>", unsafe_allow_html=True)
-    
-    if not st.session_state.detection_history:
-        st.info("🐾 You haven't identified any animals yet. Go to Find Animals to get started!")
-    else:
-        st.markdown(f"### Total Animals Found: {len(st.session_state.detection_history)}")
-        
-        for i, record in enumerate(reversed(st.session_state.detection_history)):
-            with st.expander(f"🐾 {record['animal_name']} - {record['timestamp']}"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"**Animal:** {record['animal_name']}")
-                    st.write(f"**Type:** {record['animal_type']}")
-                with col2:
-                    st.write(f"**Date:** {record['timestamp']}")
-        
-        if st.button("🗑️ Clear History"):
-            st.session_state.detection_history = []
             st.rerun()
