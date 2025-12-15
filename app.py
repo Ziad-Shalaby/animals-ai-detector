@@ -4,7 +4,6 @@ import json
 import base64
 from PIL import Image
 import io
-import google.generativeai as genai
 from datetime import datetime
 
 # ----------------------------------
@@ -219,7 +218,6 @@ st.markdown("""
         border: 3px solid;
     }
     
-    /* Make text normal size and readable for kids */
     p, li, span, div {
         font-size: 1em !important;
         line-height: 1.5;
@@ -251,56 +249,88 @@ if 'detection_history' not in st.session_state:
 # ----------------------------------
 # API Configuration
 # ----------------------------------
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+HF_API_KEY = st.secrets.get("HF_API_KEY", "")
+HF_API_URL_VISION = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large"
+HF_API_URL_CHAT = "https://api-inference.huggingface.co/models/microsoft/Phi-3-mini-4k-instruct"
 
 # ----------------------------------
-# Gemini Vision API for Animal Detection (Kid-Friendly)
+# Hugging Face Vision API for Animal Detection
 # ----------------------------------
-def identify_animal_with_gemini(image_data):
+def identify_animal_with_hf(image_data):
     """
-    Identify animal using Gemini Vision API with kid-friendly responses
+    Identify animal using Hugging Face Vision API with kid-friendly responses
     """
-    if not GEMINI_API_KEY:
+    if not HF_API_KEY:
         return {
             "error": True,
             "message": "Oops! We need to set up the AI first. Ask a grown-up to add the API key!"
         }
     
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
+        # Convert PIL Image to bytes
+        img_byte_arr = io.BytesIO()
+        image_data.save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
         
-        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro-vision']
+        headers = {"Authorization": f"Bearer {HF_API_KEY}"}
         
-        prompt = """Analyze this image and identify the animal. Provide information in a fun, kid-friendly way suitable for children in grades 1-6. Use simple words and make it exciting!
+        # First, get image caption
+        response = requests.post(HF_API_URL_VISION, headers=headers, data=img_byte_arr)
+        
+        if response.status_code != 200:
+            return {
+                "error": True,
+                "message": f"Hmm, the AI couldn't process this image. Try another picture! (Error: {response.status_code})"
+            }
+        
+        result = response.json()
+        
+        if isinstance(result, list) and len(result) > 0:
+            caption = result[0].get('generated_text', '')
+        else:
+            caption = result.get('generated_text', '')
+        
+        # Now use the chat model to create kid-friendly response
+        prompt = f"""Based on this image description: "{caption}"
+
+Provide animal information in a fun, kid-friendly way suitable for children in grades 1-6:
 
 Animal Name: [Common name that kids would know]
-Scientific Name: [Scientific name - but explain it's the "science name"]
-Animal Type: [Is it a Mammal/Bird/Reptile/Fish/Amphibian/Insect - explain what that means simply]
+Scientific Name: [Scientific name or "Let's call it the science name!"]
+Animal Type: [Mammal/Bird/Reptile/Fish/Amphibian/Insect]
 Where They Live: [Their home/habitat in simple terms]
-What They Eat: [Diet in simple, fun terms - like "They LOVE to munch on..."]
-Are They Safe?: [Conservation status in kid terms - like "Doing great!" or "Need our help"]
-Cool Facts: [5-7 super fun facts that kids will find amazing! Make them exciting!]
-What They Look Like: [Fun description of how they look]
+What They Eat: [Diet in simple, fun terms]
+Are They Safe?: [Conservation status in kid terms]
+Cool Facts: [3-5 super fun facts that kids will find amazing!]
+What They Look Like: [Fun description]
 
-Make it fun, educational, and exciting for kids ages 6-12! Use emojis when helpful!"""
+Make it fun and exciting for kids ages 6-12! Use emojis when helpful! 🐾"""
 
-        for model_name in model_names:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content([prompt, image_data])
-                
-                return {
-                    "error": False,
-                    "text": response.text,
-                    "model_used": model_name
-                }
-            except Exception as e:
-                continue
+        chat_response = requests.post(
+            HF_API_URL_CHAT,
+            headers=headers,
+            json={"inputs": prompt, "parameters": {"max_new_tokens": 500, "temperature": 0.7}}
+        )
         
-        return {
-            "error": True,
-            "message": "Hmm, the AI couldn't figure this one out. Try another picture!"
-        }
+        if chat_response.status_code == 200:
+            chat_result = chat_response.json()
+            if isinstance(chat_result, list) and len(chat_result) > 0:
+                text = chat_result[0].get('generated_text', caption)
+            else:
+                text = chat_result.get('generated_text', caption)
+            
+            return {
+                "error": False,
+                "text": text,
+                "model_used": "Hugging Face (BLIP + Phi-3)"
+            }
+        else:
+            # Fallback to simple caption
+            return {
+                "error": False,
+                "text": f"Animal Name: {caption}\n\nCool Facts:\n- This is what I see in the picture!\n- Upload another image to learn more!\n- I'm still learning to identify animals better!",
+                "model_used": "Hugging Face (BLIP)"
+            }
         
     except Exception as e:
         return {
@@ -309,48 +339,60 @@ Make it fun, educational, and exciting for kids ages 6-12! Use emojis when helpf
         }
 
 # ----------------------------------
-# Gemini Chat Functions (Kid-Friendly)
+# Hugging Face Chat Functions (Kid-Friendly)
 # ----------------------------------
-def chat_with_gemini(user_message, context=None):
+def chat_with_hf(user_message, context=None):
     """
-    Chat with Gemini AI about animals - kid-friendly version
+    Chat with Hugging Face AI about animals - kid-friendly version
     """
-    if not GEMINI_API_KEY:
+    if not HF_API_KEY:
         return "Oops! We need to set up the AI first. Ask a grown-up to add the API key!"
     
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        
-        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        headers = {"Authorization": f"Bearer {HF_API_KEY}"}
         
         if context:
-            system_prompt = f"""You are a super friendly animal expert talking to kids in grades 1-6 (ages 6-12). 
-            
-Current animal we're learning about:
-- Animal: {context.get('animal_name', 'Unknown')}
-- Scientific Name: {context.get('scientific_name', 'N/A')}
-- Type: {context.get('animal_type', 'N/A')}
-- Where it lives: {context.get('habitat', 'N/A')}
+            prompt = f"""You are a super friendly animal expert talking to kids in grades 1-6 (ages 6-12).
 
-Answer questions in a fun, exciting way! Use simple words, be enthusiastic, and make learning about animals super fun! You can use emojis to make it more fun! Keep answers clear and not too long - perfect for kids to understand.
+Current animal: {context.get('animal_name', 'Unknown')}
+Type: {context.get('animal_type', 'N/A')}
+Where it lives: {context.get('habitat', 'N/A')}
 
-Kid's question: {user_message}"""
+Answer this question in a fun, exciting way using simple words: {user_message}
+
+Keep your answer short (2-3 sentences), fun, and easy to understand for kids!"""
         else:
-            system_prompt = f"""You are a super friendly animal expert talking to kids in grades 1-6 (ages 6-12). Answer questions about animals in a fun, exciting way! Use simple words, be enthusiastic, and make learning super fun! You can use emojis! Keep answers clear and not too long.
+            prompt = f"""You are a super friendly animal expert talking to kids ages 6-12. Answer this question about animals in a fun, exciting way using simple words: {user_message}
 
-Kid's question: {user_message}"""
+Keep your answer short (2-3 sentences), fun, and easy to understand for kids! Use emojis if it helps! 🐾"""
         
-        last_error = None
-        for model_name in model_names:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(system_prompt)
-                return response.text
-            except Exception as e:
-                last_error = str(e)
-                continue
+        response = requests.post(
+            HF_API_URL_CHAT,
+            headers=headers,
+            json={
+                "inputs": prompt,
+                "parameters": {
+                    "max_new_tokens": 250,
+                    "temperature": 0.7,
+                    "top_p": 0.9
+                }
+            }
+        )
         
-        return f"⚠️ Oh no! The AI is taking a break. Please try again in a moment!"
+        if response.status_code == 200:
+            result = response.json()
+            if isinstance(result, list) and len(result) > 0:
+                text = result[0].get('generated_text', '')
+            else:
+                text = result.get('generated_text', '')
+            
+            # Extract only the response part (remove the prompt)
+            if prompt in text:
+                text = text.replace(prompt, '').strip()
+            
+            return text if text else "That's a great question! Let me think about that... 🤔"
+        else:
+            return f"⚠️ Oh no! The AI is taking a break. Please try again in a moment!"
         
     except Exception as e:
         return f"Oops! Something went wrong: {str(e)}"
@@ -519,15 +561,15 @@ if app_mode == "🏠 Home":
         """)
     
     # API Setup Warning
-    if not GEMINI_API_KEY:
+    if not HF_API_KEY:
         st.warning("""
         ⚠️ **Hey Grown-ups!**
         
-        To use this app, you need a Gemini API key:
-        1. Get a FREE API key from https://aistudio.google.com/app/apikey
+        To use this app, you need a Hugging Face API key:
+        1. Get a FREE API key from https://huggingface.co/settings/tokens
         2. Create `.streamlit/secrets.toml` file with:
         ```
-        GEMINI_API_KEY = "your_gemini_api_key"
+        HF_API_KEY = "your_huggingface_api_key"
         ```
         
         **It's completely FREE to use!** 🎉
@@ -539,7 +581,7 @@ if app_mode == "🏠 Home":
 elif app_mode == "🔍 Find Animals":
     st.markdown("<h1>🔍 Find That Animal! 🐾</h1>", unsafe_allow_html=True)
     
-    if not GEMINI_API_KEY:
+    if not HF_API_KEY:
         st.error("⚠️ Oops! We need to set up the AI first. Ask a grown-up to add the API key!")
         st.stop()
     
@@ -557,7 +599,7 @@ elif app_mode == "🔍 Find Animals":
             
             if st.button("🔍 Find Out What Animal This Is!", use_container_width=True):
                 with st.spinner("🤖 AI is looking at your picture... This is so cool! ✨"):
-                    result = identify_animal_with_gemini(image)
+                    result = identify_animal_with_hf(image)
                     
                     if result.get("error"):
                         st.error(result.get("message"))
@@ -671,7 +713,7 @@ elif app_mode == "💬 Ask Questions":
     st.markdown("<h1>💬 Ask the Animal Expert! 🦉</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; font-size: 18px; color: #059669;'>Ask me ANYTHING about animals! I love answering questions! 😊</p>", unsafe_allow_html=True)
     
-    if not GEMINI_API_KEY:
+    if not HF_API_KEY:
         st.error("⚠️ Oops! We need to set up the AI first. Ask a grown-up to add the API key!")
         st.stop()
     
@@ -728,7 +770,7 @@ elif app_mode == "💬 Ask Questions":
         })
         
         with st.spinner("🤔 Thinking..."):
-            response = chat_with_gemini(user_input, st.session_state.animal_context)
+            response = chat_with_hf(user_input, st.session_state.animal_context)
         
         st.session_state.chat_history.append({
             'role': 'assistant',
@@ -757,7 +799,7 @@ elif app_mode == "💬 Ask Questions":
                         'role': 'user',
                         'content': question
                     })
-                    response = chat_with_gemini(question, st.session_state.animal_context)
+                    response = chat_with_hf(question, st.session_state.animal_context)
                     st.session_state.chat_history.append({
                         'role': 'assistant',
                         'content': response
